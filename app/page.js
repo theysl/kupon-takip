@@ -2,13 +2,22 @@
 import { useEffect, useState } from 'react';
 
 export default function Dashboard() {
-  const [stats, setStats] = useState(null);
+  const [stats, setStats] = useState({
+    total_coupons: 0,
+    won_coupons: 0,
+    lost_coupons: 0,
+    pending_coupons: 0,
+    total_invested: 0,
+    total_returned: 0,
+    profit_loss: 0
+  });
   const [coupons, setCoupons] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 30000); // Her 30 saniyede güncelle
+    const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -18,185 +27,172 @@ export default function Dashboard() {
         fetch('/api/stats'),
         fetch('/api/coupons')
       ]);
-      setStats(await statsRes.json());
-      setCoupons(await couponsRes.json());
+      
+      if (!statsRes.ok || !couponsRes.ok) {
+        throw new Error('API yanıt vermedi');
+      }
+      
+      const statsData = await statsRes.json();
+      const couponsData = await couponsRes.json();
+      
+      setStats(statsData);
+      setCoupons(couponsData);
       setLoading(false);
+      setError(null);
     } catch (error) {
       console.error('Fetch error:', error);
+      setError(error.message);
+      setLoading(false);
     }
   };
 
-  if (loading) return <div className="loading">Yükleniyor...</div>;
+  if (loading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        fontSize: '24px',
+        flexDirection: 'column',
+        gap: '20px'
+      }}>
+        <div>⏳ Yükleniyor...</div>
+        {error && <div style={{ color: 'red', fontSize: '14px' }}>{error}</div>}
+      </div>
+    );
+  }
 
   return (
-    <div className="container">
-      <header className="header">
-        <h1>🎯 Kupon Takip Sistemi</h1>
-        <div className="refresh" onClick={fetchData}>🔄</div>
+    <div style={{
+      maxWidth: '1200px',
+      margin: '0 auto',
+      padding: '20px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      background: '#f5f5f5',
+      minHeight: '100vh'
+    }}>
+      <header style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '30px'
+      }}>
+        <h1 style={{ fontSize: '28px', margin: 0, color: '#1a1a1a' }}>
+          🎯 Kupon Takip Sistemi
+        </h1>
+        <div onClick={fetchData} style={{
+          cursor: 'pointer',
+          fontSize: '24px',
+          padding: '10px',
+          borderRadius: '50%',
+          background: 'white',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          transition: 'transform 0.3s'
+        }} title="Yenile">
+          🔄
+        </div>
       </header>
 
-      <div className="stats-grid">
-        <StatCard 
-          title="Toplam Kupon" 
-          value={stats.total_coupons} 
-          icon="📋"
-        />
-        <StatCard 
-          title="Kazanan" 
-          value={stats.won_coupons} 
-          icon="✅" 
-          color="green"
-        />
-        <StatCard 
-          title="Kaybeden" 
-          value={stats.lost_coupons} 
-          icon="❌" 
-          color="red"
-        />
-        <StatCard 
-          title="Bekleyen" 
-          value={stats.pending_coupons} 
-          icon="⏳" 
-          color="orange"
-        />
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: '20px',
+        marginBottom: '30px'
+      }}>
+        <StatCard title="Toplam Kupon" value={stats.total_coupons || 0} icon="📋" />
+        <StatCard title="Kazanan" value={stats.won_coupons || 0} icon="✅" color="green" />
+        <StatCard title="Kaybeden" value={stats.lost_coupons || 0} icon="❌" color="red" />
+        <StatCard title="Bekleyen" value={stats.pending_coupons || 0} icon="⏳" color="orange" />
       </div>
 
-      <div className="profit-card">
-        <div className="profit-item">
-          <span>Toplam Yatırım</span>
-          <strong>{stats.total_invested.toFixed(2)} TL</strong>
+      <div style={{
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        color: 'white',
+        padding: '30px',
+        borderRadius: '15px',
+        display: 'flex',
+        flexWrap: 'wrap',
+        justifyContent: 'space-around',
+        marginBottom: '30px',
+        boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+        gap: '20px'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ opacity: 0.9, marginBottom: '10px' }}>Toplam Yatırım</div>
+          <strong style={{ fontSize: '24px', display: 'block' }}>
+            {(stats.total_invested || 0).toFixed(2)} TL
+          </strong>
         </div>
-        <div className="profit-item">
-          <span>Toplam Kazanç</span>
-          <strong className="green">{stats.total_returned.toFixed(2)} TL</strong>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ opacity: 0.9, marginBottom: '10px' }}>Toplam Kazanç</div>
+          <strong style={{ fontSize: '24px', display: 'block', color: '#10b981' }}>
+            {(stats.total_returned || 0).toFixed(2)} TL
+          </strong>
         </div>
-        <div className="profit-item">
-          <span>Net Kar/Zarar</span>
-          <strong className={stats.profit_loss >= 0 ? 'green' : 'red'}>
-            {stats.profit_loss >= 0 ? '+' : ''}{stats.profit_loss.toFixed(2)} TL
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ opacity: 0.9, marginBottom: '10px' }}>Net Kar/Zarar</div>
+          <strong style={{ 
+            fontSize: '24px', 
+            display: 'block',
+            color: (stats.profit_loss || 0) >= 0 ? '#10b981' : '#ef4444'
+          }}>
+            {(stats.profit_loss || 0) >= 0 ? '+' : ''}{(stats.profit_loss || 0).toFixed(2)} TL
           </strong>
         </div>
       </div>
 
-      <div className="coupons-list">
-        <h2>Son Kuponlar</h2>
-        {coupons.map(coupon => (
-          <CouponCard key={coupon.id} coupon={coupon} />
-        ))}
+      <div>
+        <h2 style={{ marginBottom: '20px', color: '#1a1a1a' }}>Son Kuponlar</h2>
+        {coupons.length === 0 ? (
+          <div style={{ 
+            textAlign: 'center', 
+            padding: '40px', 
+            background: 'white',
+            borderRadius: '12px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '20px' }}>📭</div>
+            <div style={{ fontSize: '18px', color: '#64748b' }}>
+              Henüz kupon yok. Telegram botunuza kupon fotoğrafı gönderin.
+            </div>
+          </div>
+        ) : (
+          coupons.map(coupon => <CouponCard key={coupon.id} coupon={coupon} />)
+        )}
       </div>
-
-      <style jsx>{`
-        .container {
-          max-width: 1200px;
-          margin: 0 auto;
-          padding: 20px;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        }
-        .header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 30px;
-        }
-        .header h1 {
-          font-size: 28px;
-          margin: 0;
-        }
-        .refresh {
-          cursor: pointer;
-          font-size: 24px;
-          padding: 10px;
-          border-radius: 50%;
-          transition: transform 0.3s;
-        }
-        .refresh:hover {
-          transform: rotate(180deg);
-        }
-        .stats-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-          gap: 20px;
-          margin-bottom: 30px;
-        }
-        .profit-card {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          padding: 30px;
-          border-radius: 15px;
-          display: flex;
-          justify-content: space-around;
-          margin-bottom: 30px;
-          box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-        }
-        .profit-item {
-          text-align: center;
-        }
-        .profit-item span {
-          display: block;
-          opacity: 0.9;
-          margin-bottom: 10px;
-        }
-        .profit-item strong {
-          font-size: 24px;
-          display: block;
-        }
-        .green { color: #10b981; }
-        .red { color: #ef4444; }
-        .coupons-list h2 {
-          margin-bottom: 20px;
-        }
-        @media (max-width: 768px) {
-          .stats-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-          .profit-card {
-            flex-direction: column;
-            gap: 20px;
-          }
-        }
-      `}</style>
     </div>
   );
 }
 
 function StatCard({ title, value, icon, color = 'blue' }) {
+  const colors = {
+    blue: '#3b82f6',
+    green: '#10b981',
+    red: '#ef4444',
+    orange: '#f59e0b'
+  };
+
   return (
-    <div className={`stat-card ${color}`}>
-      <div className="icon">{icon}</div>
-      <div className="content">
-        <div className="value">{value}</div>
-        <div className="title">{title}</div>
+    <div style={{
+      background: 'white',
+      padding: '25px',
+      borderRadius: '15px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '15px',
+      boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+      borderLeft: `4px solid ${colors[color]}`,
+      transition: 'transform 0.3s',
+      cursor: 'default'
+    }}>
+      <div style={{ fontSize: '40px' }}>{icon}</div>
+      <div>
+        <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#1a1a1a' }}>
+          {value}
+        </div>
+        <div style={{ color: '#64748b', fontSize: '14px' }}>{title}</div>
       </div>
-      <style jsx>{`
-        .stat-card {
-          background: white;
-          padding: 25px;
-          border-radius: 15px;
-          display: flex;
-          align-items: center;
-          gap: 15px;
-          box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-          transition: transform 0.3s;
-        }
-        .stat-card:hover {
-          transform: translateY(-5px);
-        }
-        .icon {
-          font-size: 40px;
-        }
-        .value {
-          font-size: 32px;
-          font-weight: bold;
-        }
-        .title {
-          color: #64748b;
-          font-size: 14px;
-        }
-        .green { border-left: 4px solid #10b981; }
-        .red { border-left: 4px solid #ef4444; }
-        .orange { border-left: 4px solid #f59e0b; }
-        .blue { border-left: 4px solid #3b82f6; }
-      `}</style>
     </div>
   );
 }
@@ -207,57 +203,58 @@ function CouponCard({ coupon }) {
     lost: '#ef4444',
     pending: '#f59e0b'
   };
-  
+
+  const statusText = {
+    won: '✅ Kazandı',
+    lost: '❌ Kaybetti',
+    pending: '⏳ Bekliyor'
+  };
+
   return (
-    <div className="coupon-card">
-      <div className="coupon-header">
-        <span className="coupon-code">{coupon.coupon_code}</span>
-        <span className="status" style={{ background: statusColors[coupon.status] }}>
-          {coupon.status === 'won' ? '✅ Kazandı' : coupon.status === 'lost' ? '❌ Kaybetti' : '⏳ Bekliyor'}
+    <div style={{
+      background: 'white',
+      padding: '20px',
+      borderRadius: '12px',
+      marginBottom: '15px',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+      transition: 'transform 0.3s',
+      cursor: 'default'
+    }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '15px',
+        flexWrap: 'wrap',
+        gap: '10px'
+      }}>
+        <span style={{ fontWeight: 'bold', fontSize: '16px', color: '#1a1a1a' }}>
+          {coupon.coupon_code}
+        </span>
+        <span style={{
+          padding: '5px 15px',
+          borderRadius: '20px',
+          color: 'white',
+          fontSize: '12px',
+          background: statusColors[coupon.status] || '#64748b'
+        }}>
+          {statusText[coupon.status] || '❓ Bilinmiyor'}
         </span>
       </div>
-      <div className="coupon-details">
-        <div>💰 Yatırım: <strong>{coupon.total_stake} TL</strong></div>
-        <div>📊 Oran: <strong>{coupon.total_odds}</strong></div>
-        <div>🎯 Kazanç: <strong>{coupon.potential_win} TL</strong></div>
+      <div style={{ 
+        display: 'flex', 
+        gap: '20px', 
+        marginBottom: '10px',
+        flexWrap: 'wrap',
+        fontSize: '14px'
+      }}>
+        <div>💰 Yatırım: <strong>{coupon.total_stake || 0} TL</strong></div>
+        <div>📊 Oran: <strong>{coupon.total_odds || 0}</strong></div>
+        <div>🎯 Kazanç: <strong>{coupon.potential_win || 0} TL</strong></div>
       </div>
-      <div className="coupon-date">
+      <div style={{ color: '#94a3b8', fontSize: '12px' }}>
         {new Date(coupon.created_at).toLocaleString('tr-TR')}
       </div>
-      <style jsx>{`
-        .coupon-card {
-          background: white;
-          padding: 20px;
-          border-radius: 12px;
-          margin-bottom: 15px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        .coupon-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 15px;
-        }
-        .coupon-code {
-          font-weight: bold;
-          font-size: 16px;
-        }
-        .status {
-          padding: 5px 15px;
-          border-radius: 20px;
-          color: white;
-          font-size: 12px;
-        }
-        .coupon-details {
-          display: flex;
-          gap: 20px;
-          margin-bottom: 10px;
-        }
-        .coupon-date {
-          color: #94a3b8;
-          font-size: 12px;
-        }
-      `}</style>
     </div>
   );
 }

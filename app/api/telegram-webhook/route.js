@@ -1,97 +1,68 @@
-import { Telegraf } from 'telegraf';
-import { createWorker } from 'tesseract.js';
+import { NextResponse } from 'next/server';
 import { sql } from '@vercel/postgres';
 
-const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-
-export async function POST(req) {
+export async function POST(request) {
   try {
-    const body = await req.json();
+    const body = await request.json();
+    console.log('Telegram webhook:', body);
     
-    // Fotoğraf kontrolü
     if (body.message?.photo) {
-      const photo = body.message.photo[body.message.photo.length - 1];
-      const fileId = photo.file_id;
+      const chatId = body.message.chat.id;
+      const couponCode = `KUPON${Date.now()}`;
       
-      // Telegram'dan fotoğrafı indir
-      const fileLink = await bot.telegram.getFileLink(fileId);
+      // Test verisi kaydet
+      await sql`
+        INSERT INTO coupons (
+          telegram_message_id, 
+          coupon_code, 
+          total_stake, 
+          total_odds, 
+          potential_win,
+          status
+        ) VALUES (
+          ${body.message.message_id},
+          ${couponCode},
+          100,
+          2.5,
+          250,
+          'pending'
+        )
+      `;
       
-      // OCR ile metni çıkar
-      const worker = await createWorker('tur');
-      const { data: { text } } = await worker.recognize(fileLink.href);
-      await worker.terminate();
+      // İstatistikleri güncelle
+      await sql`
+        UPDATE stats SET 
+          total_coupons = total_coupons + 1,
+          pending_coupons = pending_coupons + 1,
+          total_invested = total_invested + 100,
+          updated_at = NOW()
+        WHERE id = 1
+      `;
       
-      // Kupon bilgilerini parse et
-      const couponData = parseCouponText(text);
+      // Telegram'a yanıt
+      const botToken = process.env.TELEGRAM_BOT_TOKEN;
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `✅ Kupon kaydedildi!\n\n🎫 Kod: ${couponCode}\n💰 Yatırım: 100 TL\n📊 Oran: 2.5\n🎯 Olası Kazanç: 250 TL\n\nDashboard: ${process.env.NEXT_PUBLIC_APP_URL}`
+        })
+      });
       
-      if (couponData) {
-        // Veritabanına kaydet
-        const result = await sql`
-          INSERT INTO coupons (telegram_message_id, coupon_code, total_stake, total_odds, potential_win)
-          VALUES (${body.message.message_id}, ${couponData.code}, ${couponData.stake}, ${couponData.odds}, ${couponData.potentialWin})
-          RETURNING id
-        `;
-        
-        const couponId = result.rows[0].id;
-        
-        // Maçları kaydet
-        for (const match of couponData.matches) {
-          await sql`
-            INSERT INTO matches (coupon_id, home_team, away_team, prediction, odds, match_date)
-            VALUES (${couponId}, ${match.homeTeam}, ${match.awayTeam}, ${match.prediction}, ${match.odds}, ${match.date})
-          `;
-        }
-        
-        await bot.telegram.sendMessage(
-          body.message.chat.id,
-          `✅ Kupon kaydedildi!\n💰 Yatırım: ${couponData.stake} TL\n📊 Oran: ${couponData.odds}\n🎯 Kazanç: ${couponData.potentialWin} TL`
-        );
-      }
+      return NextResponse.json({ ok: true });
     }
     
-    return Response.json({ ok: true });
+    return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('Telegram webhook error:', error);
-    return Response.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
-function parseCouponText(text) {
-  try {
-    const lines = text.split('\n').filter(line => line.trim());
-    
-    // Kupon kodu
-    const codeMatch = text.match(/(?:Kupon|Kod|Code)[:.\s]*([A-Z0-9]{6,})/i);
-    const code = codeMatch ? codeMatch[1] : `AUTO${Date.now()}`;
-    
-    // Toplam oran
-    const oddsMatch = text.match(/(?:Toplam|Total)?\s*Oran[:.\s]*([\d.,]+)/i);
-    const odds = oddsMatch ? parseFloat(oddsMatch[1].replace(',', '.')) : 0;
-    
-    // Yatırım
-    const stakeMatch = text.match(/(?:Yatırım|Tutar)[:.\s]*([\d.,]+)/i);
-    const stake = stakeMatch ? parseFloat(stakeMatch[1].replace(',', '.')) : 0;
-    
-    const potentialWin = stake * odds;
-    
-    // Maçları parse et
-    const matches = [];
-    const matchPattern = /([\w\s]+)\s*-\s*([\w\s]+).*?(MS|KG|Alt|Üst|İY).*?([\d.,]+)/gi;
-    let matchResult;
-    
-    while ((matchResult = matchPattern.exec(text)) !== null) {
-      matches.push({
-        homeTeam: matchResult[1].trim(),
-        awayTeam: matchResult[2].trim(),
-        prediction: matchResult[3],
-        odds: parseFloat(matchResult[4].replace(',', '.')),
-        date: new Date()
-      });
-    }
-    
-    return { code, stake, odds, potentialWin, matches };
-  } catch (error) {
-    console.error('Parse error:', error);
-    return null;
-  }
+export async function GET() {
+  return NextResponse.json({ 
+    status: 'Telegram webhook active',
+    time: new Date().toISOString()
+  });
 }
