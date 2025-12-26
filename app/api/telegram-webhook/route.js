@@ -16,11 +16,14 @@ export async function POST(request) {
     // Sadece fotoğraf varsa işle
     if (message.photo) {
       const chatId = message.chat.id;
-      const couponCode = `KUPON${Date.now()}`;
+      const caption = message.caption || '';
       
-      // Kupon bilgilerini parse et (şimdilik sabit değerler)
-      const stake = 100;
-      const odds = 2.5;
+      // Caption'dan bilgileri parse et
+      const parsedData = parseCouponCaption(caption);
+      
+      const couponCode = `KUPON${Date.now()}`;
+      const stake = parsedData.maxBet || 100; // Default 100 TL
+      const odds = parsedData.totalOdds || 2.5; // Default 2.5
       const potentialWin = stake * odds;
       
       // Veritabanına kaydet
@@ -60,12 +63,13 @@ export async function POST(request) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: chatId,
-            text: `✅ Kupon kaydedildi!\n\n🎫 Kod: ${couponCode}\n💰 Yatırım: ${stake} TL\n📊 Oran: ${odds}\n🎯 Olası Kazanç: ${potentialWin} TL\n\nDashboard: ${process.env.NEXT_PUBLIC_APP_URL}`,
+            text: `✅ Kupon kaydedildi!\n\n🎫 Kod: ${couponCode}\n💰 Yatırım: ${stake} TL\n📊 Oran: ${odds}\n🎯 Olası Kazanç: ${potentialWin.toFixed(2)} TL\n\n📱 Dashboard: ${process.env.NEXT_PUBLIC_APP_URL}`,
             parse_mode: 'HTML'
           })
         });
       }
       
+      console.log(`✅ Kupon kaydedildi: ${couponCode} - ${stake}TL x ${odds} = ${potentialWin}TL`);
       return NextResponse.json({ ok: true, saved: couponCode });
     }
     
@@ -74,6 +78,39 @@ export async function POST(request) {
     console.error('Telegram webhook error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+// Caption parser fonksiyonu
+function parseCouponCaption(caption) {
+  const result = {
+    totalOdds: null,
+    maxBet: null,
+    matches: []
+  };
+  
+  if (!caption) return result;
+  
+  // Oran tespiti (örnek: "13 Oran", "🔼 11 Oran")
+  const oddsMatch = caption.match(/(\d+(?:\.\d+)?)\s*Oran/i);
+  if (oddsMatch) {
+    result.totalOdds = parseFloat(oddsMatch[1]);
+  }
+  
+  // Max bahis tespiti (örnek: "Max 100₺", "💵 Max 400₺", "MAX BAHİS:400₺")
+  const maxBetMatch = caption.match(/Max\s*(?:Bahis|Bet)?[:\s]*(\d+)/i);
+  if (maxBetMatch) {
+    result.maxBet = parseInt(maxBetMatch[1]);
+  }
+  
+  // Alternatif max bahis formatları
+  if (!result.maxBet) {
+    const altMaxMatch = caption.match(/(\d+)₺/);
+    if (altMaxMatch) {
+      result.maxBet = parseInt(altMaxMatch[1]);
+    }
+  }
+  
+  return result;
 }
 
 export async function GET() {
